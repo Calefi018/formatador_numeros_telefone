@@ -90,7 +90,7 @@
     <div class="container">
         <h1>Formatador e Verificador de Números</h1>
         
-        <label for="input-numeros">1. Cole todos os números aqui:</label>
+        <label for="input-numeros">1. Cole todos os números aqui (um por linha):</label>
         <textarea id="input-numeros" placeholder="Ex: (47) 99123-4567&#10;123456 (número errado)&#10;47999887766"></textarea>
 
         <div class="actions">
@@ -134,31 +134,27 @@
                 const numerosValidos = [];
                 const numerosInvalidos = [];
                 
-                // Divide a entrada por espaços, vírgulas ou novas linhas
-                const potenciaisNumeros = textoBruto.split(/[\s\n,]+/);
+                // CORREÇÃO: Dividir a entrada por NOVA LINHA, não por espaços.
+                const potenciaisNumeros = textoBruto.split('\n');
 
                 potenciaisNumeros.forEach(itemOriginal => {
                     const itemLimpo = itemOriginal.trim();
-                    if (!itemLimpo) return; // Ignora entradas vazias
+                    if (!itemLimpo) return; 
 
                     let numeroProcessado = itemLimpo.replace(/\D/g, '');
 
-                    // Aplica a regra de correção de 10 para 11 dígitos
                     if (numeroProcessado.length === 10 && '6789'.includes(numeroProcessado[2])) {
                         numeroProcessado = `${numeroProcessado.slice(0, 2)}9${numeroProcessado.slice(2)}`;
                     }
 
-                    // Separa os números válidos dos inválidos
                     if (numeroProcessado.length === 11) {
                         numerosValidos.push(`+55${numeroProcessado}`);
                     } else {
-                        numerosInvalidos.push(itemLimpo); // Adiciona o item original à lista de erros
+                        numerosInvalidos.push(itemLimpo);
                     }
                 });
 
-                // Remove duplicados dos válidos, ordena e junta com vírgula
                 const resultadoValido = [...new Set(numerosValidos)].sort().join(',');
-                // Junta os inválidos com uma nova linha para facilitar a leitura
                 const resultadoInvalido = numerosInvalidos.join('\n');
 
                 outputValidosEl.value = resultadoValido;
