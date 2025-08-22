@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Formatador de Números para Envio</title>
+    <title>Formatador e Verificador de Números</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -29,9 +29,15 @@
             text-align: center;
             margin-bottom: 25px;
         }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #606770;
+        }
         textarea {
             width: 100%;
-            height: 150px;
+            height: 120px;
             padding: 12px;
             border: 1px solid #dddfe2;
             border-radius: 6px;
@@ -39,6 +45,10 @@
             margin-bottom: 15px;
             resize: vertical;
             box-sizing: border-box;
+        }
+        textarea#output-erros {
+            border-color: #dc3545; /* Vermelho para destacar erros */
+            background-color: #fff6f6;
         }
         .actions {
             display: flex;
@@ -78,69 +88,92 @@
 <body>
 
     <div class="container">
-        <h1>Formatador de Números</h1>
+        <h1>Formatador e Verificador de Números</h1>
         
-        <label for="input-numeros"><b>1. Cole os números aqui:</b></label>
-        <textarea id="input-numeros" placeholder="Ex: (47) 99123-4567&#10;47999887766&#10;47 9 9876-5432"></textarea>
+        <label for="input-numeros">1. Cole todos os números aqui:</label>
+        <textarea id="input-numeros" placeholder="Ex: (47) 99123-4567&#10;123456 (número errado)&#10;47999887766"></textarea>
 
         <div class="actions">
-            <button id="btn-formatar">Formatar Números</button>
+            <button id="btn-formatar">Formatar e Verificar</button>
         </div>
 
         <br>
 
-        <label for="output-numeros"><b>2. Resultado pronto para copiar:</b></label>
-        <textarea id="output-numeros" readonly placeholder="O resultado formatado aparecerá aqui..."></textarea>
+        <label for="output-validos">2. Resultado Válido (pronto para copiar):</label>
+        <textarea id="output-validos" readonly placeholder="Números formatados corretamente aparecerão aqui..."></textarea>
         
         <div class="actions">
-            <button id="btn-copiar" class="copy">Copiar Resultado</button>
+            <button id="btn-copiar" class="copy">Copiar Válidos</button>
         </div>
         <div id="copy-feedback"></div>
+
+        <br>
+
+        <label for="output-erros">3. Números com Erro (para correção manual):</label>
+        <textarea id="output-erros" readonly placeholder="Números não identificados aparecerão aqui..."></textarea>
 
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const inputEl = document.getElementById('input-numeros');
-            const outputEl = document.getElementById('output-numeros');
+            const outputValidosEl = document.getElementById('output-validos');
+            const outputErrosEl = document.getElementById('output-erros');
             const formatarBtn = document.getElementById('btn-formatar');
             const copiarBtn = document.getElementById('btn-copiar');
             const feedbackEl = document.getElementById('copy-feedback');
 
             formatarBtn.addEventListener('click', () => {
                 const textoBruto = inputEl.value;
-                if (!textoBruto) return;
+                if (!textoBruto) {
+                    outputValidosEl.value = '';
+                    outputErrosEl.value = '';
+                    return;
+                }
 
-                const numerosFormatadosUnicos = new Set();
+                const numerosValidos = [];
+                const numerosInvalidos = [];
+                
+                // Divide a entrada por espaços, vírgulas ou novas linhas
                 const potenciaisNumeros = textoBruto.split(/[\s\n,]+/);
 
-                potenciaisNumeros.forEach(item => {
-                    if (!item) return;
+                potenciaisNumeros.forEach(itemOriginal => {
+                    const itemLimpo = itemOriginal.trim();
+                    if (!itemLimpo) return; // Ignora entradas vazias
 
-                    let limpo = item.replace(/\D/g, '');
+                    let numeroProcessado = itemLimpo.replace(/\D/g, '');
 
-                    if (limpo.length === 10 && '6789'.includes(limpo[2])) {
-                        limpo = `${limpo.slice(0, 2)}9${limpo.slice(2)}`;
+                    // Aplica a regra de correção de 10 para 11 dígitos
+                    if (numeroProcessado.length === 10 && '6789'.includes(numeroProcessado[2])) {
+                        numeroProcessado = `${numeroProcessado.slice(0, 2)}9${numeroProcessado.slice(2)}`;
                     }
 
-                    if (limpo.length === 11) {
-                        numerosFormatadosUnicos.add(`+55${limpo}`);
+                    // Separa os números válidos dos inválidos
+                    if (numeroProcessado.length === 11) {
+                        numerosValidos.push(`+55${numeroProcessado}`);
+                    } else {
+                        numerosInvalidos.push(itemLimpo); // Adiciona o item original à lista de erros
                     }
                 });
 
-                const resultado = Array.from(numerosFormatadosUnicos).sort().join(',');
-                outputEl.value = resultado;
+                // Remove duplicados dos válidos, ordena e junta com vírgula
+                const resultadoValido = [...new Set(numerosValidos)].sort().join(',');
+                // Junta os inválidos com uma nova linha para facilitar a leitura
+                const resultadoInvalido = numerosInvalidos.join('\n');
+
+                outputValidosEl.value = resultadoValido;
+                outputErrosEl.value = resultadoInvalido;
             });
 
             copiarBtn.addEventListener('click', () => {
-                if (!outputEl.value) return;
+                if (!outputValidosEl.value) return;
 
-                navigator.clipboard.writeText(outputEl.value).then(() => {
+                navigator.clipboard.writeText(outputValidosEl.value).then(() => {
                     feedbackEl.textContent = 'Copiado para a área de transferência!';
                     copiarBtn.textContent = 'Copiado!';
                     setTimeout(() => {
                         feedbackEl.textContent = '';
-                        copiarBtn.textContent = 'Copiar Resultado';
+                        copiarBtn.textContent = 'Copiar Válidos';
                     }, 2000);
                 }).catch(err => {
                     feedbackEl.textContent = 'Erro ao copiar.';
