@@ -110,8 +110,8 @@
     <div class="container">
         <h1>Formatador e Verificador de Números</h1>
         
-        <label for="input-numeros">1. Cole os dados aqui (um por linha. Pode ser só Número ou Nome,Número):</label>
-        <textarea id="input-numeros" placeholder="Ex: (47) 99123-4567&#10;Cliente B, 47999887766&#10;11987654321"></textarea>
+        <label for="input-numeros">1. Cole os dados aqui (pode ser linha única, ou um por linha):</label>
+        <textarea id="input-numeros" placeholder="Ex: (47) 99123-4567, 11987654321, Cliente B, 47999887766"></textarea>
 
         <div class="actions">
             <button id="btn-formatar">Formatar e Verificar</button>
@@ -206,8 +206,25 @@
                 const resultadosProcessados = [];
                 const numerosInvalidos = [];
                 
-                // Trata a entrada por quebra de linha (cada linha é uma tentativa de contato)
-                const linhas = textoBruto.split('\n');
+                let linhas = [];
+
+                // **CORREÇÃO: Trata entradas em linha única (separadas por vírgula) ou múltiplas linhas**
+                if (textoBruto.includes('\n') || textoBruto.includes(',')) {
+                    // Se houver quebra de linha, processa por linha. Caso contrário, divide toda a string por vírgula.
+                    if (textoBruto.includes('\n')) {
+                        linhas = textoBruto.split('\n');
+                    } else {
+                        // Se for uma longa string de números, divide por vírgula ou espaço para processar individualmente
+                        // Usa regex para separar por vírgula OU espaço, mas mantém a formatação original das linhas.
+                        // Para simplificar e manter a limpeza de números, usamos a divisão robusta.
+                        // Neste caso, vamos forçar a divisão por vírgula SE NÃO HOUVER quebra de linha.
+                        linhas = textoBruto.split(',');
+                    }
+                } else {
+                    // Apenas uma linha, sem vírgula - assume ser um único item ou um erro.
+                    linhas = [textoBruto];
+                }
+
                 let clienteCounter = 1; // Contador para gerar Cliente 1, Cliente 2, etc.
 
                 linhas.forEach(linhaOriginal => {
@@ -218,7 +235,7 @@
                     let numeroBruto = '';
                     let isCsvFormat = false;
 
-                    // 1. Tenta detectar o padrão CSV (Nome,Número)
+                    // Tenta detectar o padrão CSV (Nome,Número) em cada item da linha
                     const partes = linhaLimpa.split(',');
                     if (partes.length >= 2) {
                         // Assume que a primeira parte é o nome e a última é o número
@@ -230,7 +247,7 @@
                         }
                     } 
                     
-                    // 2. Se não for CSV detectado, assume que a linha inteira é o número
+                    // Se não for CSV detectado, assume que a linha inteira é o número
                     if (!isCsvFormat) {
                         numeroBruto = linhaLimpa;
                         // O nome REAL será atribuído após a validação do número.
@@ -239,17 +256,17 @@
                     // Limpeza e Normalização do Número
                     let numeroProcessado = numeroBruto.replace(/\D/g, ''); // Remove todos os não-dígitos
 
-                    // 3. Remove DDI '55' ou '+55' inicial se já estiver presente
+                    // 1. Remove DDI '55' ou '+55' inicial se já estiver presente
                     if (numeroProcessado.startsWith('55') && numeroProcessado.length >= 12) {
                         numeroProcessado = numeroProcessado.substring(2);
                     }
                     
-                    // 4. Adiciona o '9' para celulares de 10 dígitos (DDD + 8 dígitos) - REGRA BR
+                    // 2. Adiciona o '9' para celulares de 10 dígitos (DDD + 8 dígitos) - REGRA BR
                     if (numeroProcessado.length === 10 && '6789'.includes(numeroProcessado[2])) {
                         numeroProcessado = `${numeroProcessado.slice(0, 2)}9${numeroProcessado.slice(2)}`;
                     }
 
-                    // 5. Validação Final: Deve ter 11 dígitos (DDD + 9 dígitos)
+                    // 3. Validação Final: Deve ter 11 dígitos (DDD + 9 dígitos)
                     if (numeroProcessado.length === 11) {
                         
                         // Garante que o nome seja 'Cliente X' se não foi fornecido um nome válido na entrada
@@ -270,9 +287,11 @@
                 // Remove duplicatas (Baseado APENAS no número)
                 const mapUnico = new Map();
                 resultadosProcessados.forEach(item => {
-                    // Se o número ainda não foi visto, ou se o nome atual é 'Cliente X' e o novo nome não é,
-                    // priorizamos o nome não-genérico (mas para esta função, podemos simplesmente aceitar o primeiro)
+                    // Usa o número como chave para garantir unicidade, priorizando o nome não-genérico se possível
                     if (!mapUnico.has(item.numero)) {
+                         mapUnico.set(item.numero, item);
+                    } else if (mapUnico.get(item.numero).nome.startsWith('Cliente ') && !item.nome.startsWith('Cliente ')) {
+                        // Se a cópia atual tem um nome genérico, mas o item novo tem um nome real, atualiza
                         mapUnico.set(item.numero, item);
                     }
                 });
