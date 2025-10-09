@@ -110,8 +110,8 @@
     <div class="container">
         <h1>Formatador e Verificador de Números</h1>
         
-        <label for="input-numeros">1. Cole todos os números aqui (qualquer formato, um por linha ou separados):</label>
-        <textarea id="input-numeros" placeholder="Ex: (47) 99123-4567&#10;123456 (número errado)&#10;47999887766"></textarea>
+        <label for="input-numeros">1. Cole os dados aqui (um por linha. Ex: Nome,Número ou Apenas Número):</label>
+        <textarea id="input-numeros" placeholder="Ex: Cliente A, (47) 99123-4567&#10;Cliente B, 47999887766&#10;119876543210 (inválido)"></textarea>
 
         <div class="actions">
             <button id="btn-formatar">Formatar e Verificar</button>
@@ -123,7 +123,8 @@
             <label for="output-format">2. Escolha o Formato de Saída:</label>
             <select id="output-format">
                 <option value="comma">+55 Bulk Sender (Separados por vírgula)</option>
-                <option value="newline_zdg">55 ZDG/Grup Zap (Um número por linha)</option>
+                <option value="newline_zdg">55 ZDG/Grup Zap (Um número por linha, sem nome)</option>
+                <option value="newline_zdg_csv">55 ZDG/Grup Zap (CSV: Nome,Número)</option>
             </select>
         </div>
 
@@ -167,26 +168,33 @@
             const downloadLotesBtn = document.getElementById('btn-download-lotes');
             const outputFormatSelect = document.getElementById('output-format');
 
-            // Variável global para armazenar os números válidos como array no formato base (sem prefixo)
-            let validosArrayBase = []; 
+            // Armazena objetos no formato { numero: 'DDXXXXXXXXX', nome: 'Nome' }
+            let validosArrayData = []; 
 
-            // Função que aplica a formatação de saída (comma ou newline)
-            const getFormattedOutput = (dataArrayBase, format) => {
+            // Função que aplica a formatação de saída
+            const getFormattedOutput = (dataArray, format) => {
                 let prefix = '';
                 let separator = '';
 
                 if (format === 'comma') {
                     prefix = '+55';
                     separator = ',';
-                } else if (format === 'newline_zdg') {
-                    prefix = '55'; // **CORREÇÃO ZDG: Apenas 55, sem o +**
-                    separator = '\n';
-                }
+                    // Para Bulk Sender, ignoramos o nome e fazemos uma string única com +55
+                    return dataArray.map(item => `${prefix}${item.numero}`).join(separator);
 
-                // Aplica o prefixo a cada número
-                const formattedArray = dataArrayBase.map(numero => `${prefix}${numero}`);
-                
-                return formattedArray.join(separator);
+                } else if (format === 'newline_zdg') {
+                    prefix = '55'; // ZDG: Apenas 55, sem o +
+                    separator = '\n';
+                    // Para ZDG sem nome, listamos 55DDXXXXXXXXX por linha
+                    return dataArray.map(item => `${prefix}${item.numero}`).join(separator);
+                    
+                } else if (format === 'newline_zdg_csv') {
+                    prefix = '55'; // ZDG CSV: Apenas 55, sem o +
+                    separator = '\n';
+                    // Para ZDG CSV, listamos nome,55DDXXXXXXXXX por linha
+                    return dataArray.map(item => `${item.nome},${prefix}${item.numero}`).join(separator);
+                }
+                return '';
             };
 
             const formatarEExibir = () => {
@@ -198,21 +206,37 @@
                 if (!textoBruto) {
                     outputValidosEl.value = '';
                     outputErrosEl.value = '';
-                    validosArrayBase = [];
+                    validosArrayData = [];
                     return;
                 }
 
-                const numerosValidos = [];
+                const resultadosProcessados = [];
                 const numerosInvalidos = [];
                 
-                // Trata a entrada, aceitando números separados por quebra de linha, vírgula, ou espaço.
-                const potenciaisNumeros = textoBruto.split(/[\n, ]+/);
+                // Trata a entrada por quebra de linha (cada linha é uma tentativa de contato)
+                const linhas = textoBruto.split('\n');
 
-                potenciaisNumeros.forEach(itemOriginal => {
-                    const itemLimpo = itemOriginal.trim();
-                    if (!itemLimpo) return; 
+                linhas.forEach(linhaOriginal => {
+                    const linhaLimpa = linhaOriginal.trim();
+                    if (!linhaLimpa) return; 
 
-                    let numeroProcessado = itemLimpo.replace(/\D/g, ''); // Remove todos os não-dígitos
+                    let nome = '';
+                    let numeroBruto = '';
+
+                    // Tenta detectar o padrão CSV (Nome,Número)
+                    const partes = linhaLimpa.split(',');
+                    if (partes.length >= 2) {
+                        // Assume que a primeira parte é o nome e a última é o número
+                        nome = partes.slice(0, -1).join(',').trim(); // Se o nome tiver vírgula
+                        numeroBruto = partes[partes.length - 1].trim();
+                    } else {
+                        // Se não for CSV, assume que a linha inteira é o número
+                        numeroBruto = linhaLimpa;
+                        nome = `cliente${(resultadosProcessados.length + numerosInvalidos.length) + 1}`; // Gera nome padrão
+                    }
+
+                    // Limpeza e Normalização do Número
+                    let numeroProcessado = numeroBruto.replace(/\D/g, ''); // Remove todos os não-dígitos
 
                     // 1. Remove DDI '55' ou '+55' inicial se já estiver presente
                     if (numeroProcessado.startsWith('55') && numeroProcessado.length >= 12) {
@@ -226,28 +250,36 @@
 
                     // 3. Validação Final: Deve ter 11 dígitos (DDD + 9 dígitos)
                     if (numeroProcessado.length === 11) {
-                        // Armazena no formato base DDIXXXXXXXXXX
-                        numerosValidos.push(numeroProcessado); 
+                        // Armazena no formato base { numero: DDXXXXXXXXX, nome: Nome }
+                        resultadosProcessados.push({ numero: numeroProcessado, nome: nome });
                     } else {
-                        // Se não for validado, volta o item original limpo
-                        numerosInvalidos.push(itemLimpo);
+                        // Se não for validado, volta a linha original para correção
+                        numerosInvalidos.push(linhaLimpa);
                     }
                 });
 
-                // Remove duplicatas e ordena
-                validosArrayBase = [...new Set(numerosValidos)].sort(); 
+                // Remove duplicatas (Baseado APENAS no número, mas mantém o nome)
+                const mapUnico = new Map();
+                resultadosProcessados.forEach(item => {
+                    // Usa o número como chave para garantir unicidade, armazena o objeto completo
+                    if (!mapUnico.has(item.numero)) {
+                        mapUnico.set(item.numero, item);
+                    }
+                });
+
+                validosArrayData = Array.from(mapUnico.values()).sort((a, b) => a.numero.localeCompare(b.numero));
                 
-                // Aplica a formatação de saída (Vírgula com +55 ou Nova Linha com 55)
-                const resultadoValido = getFormattedOutput(validosArrayBase, outputFormat);
+                // Aplica a formatação de saída
+                const resultadoValido = getFormattedOutput(validosArrayData, outputFormat);
                 const resultadoInvalido = numerosInvalidos.join('\n');
 
                 outputValidosEl.value = resultadoValido;
                 outputErrosEl.value = resultadoInvalido;
 
                 // Ativa o botão de download se houver números válidos
-                if (validosArrayBase.length > 0) {
+                if (validosArrayData.length > 0) {
                     downloadLotesBtn.disabled = false;
-                    downloadLotesBtn.textContent = `Baixar Lotes (${validosArrayBase.length} números)`;
+                    downloadLotesBtn.textContent = `Baixar Lotes (${validosArrayData.length} números)`;
                 } else {
                     downloadLotesBtn.textContent = 'Baixar Lotes (.zip)';
                 }
@@ -274,7 +306,7 @@
             });
 
             downloadLotesBtn.addEventListener('click', () => {
-                if (validosArrayBase.length === 0 || downloadLotesBtn.disabled) {
+                if (validosArrayData.length === 0 || downloadLotesBtn.disabled) {
                     alert('Nenhum número válido para dividir em lotes.');
                     return;
                 }
@@ -287,14 +319,14 @@
 
                 const zip = new JSZip();
                 let loteIndex = 1;
-                let totalLotes = Math.ceil(validosArrayBase.length / loteSize);
+                let totalLotes = Math.ceil(validosArrayData.length / loteSize);
                 const outputFormat = outputFormatSelect.value;
-                const fileExtension = outputFormat === 'newline_zdg' ? '.txt' : '.csv';
+                const fileExtension = (outputFormat === 'newline_zdg' || outputFormat === 'comma') ? '.txt' : '.csv';
 
-                for (let i = 0; i < validosArrayBase.length; i += loteSize) {
-                    const lote = validosArrayBase.slice(i, i + loteSize);
+                for (let i = 0; i < validosArrayData.length; i += loteSize) {
+                    const lote = validosArrayData.slice(i, i + loteSize);
                     
-                    // Aplica a formatação de saída (Vírgula com +55 ou Nova Linha com 55)
+                    // Aplica a formatação de saída
                     const conteudoLote = getFormattedOutput(lote, outputFormat);
 
                     const nomeArquivo = `lote_${String(loteIndex).padStart(2, '0')}_de_${String(totalLotes).padStart(2, '0')}_${lote.length}_numeros${fileExtension}`;
