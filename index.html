@@ -110,8 +110,8 @@
     <div class="container">
         <h1>Formatador e Verificador de Números</h1>
         
-        <label for="input-numeros">1. Cole os dados aqui (um por linha. Ex: Nome,Número ou Apenas Número):</label>
-        <textarea id="input-numeros" placeholder="Ex: Cliente A, (47) 99123-4567&#10;Cliente B, 47999887766&#10;119876543210 (inválido)"></textarea>
+        <label for="input-numeros">1. Cole os dados aqui (um por linha. Pode ser só Número ou Nome,Número):</label>
+        <textarea id="input-numeros" placeholder="Ex: (47) 99123-4567&#10;Cliente B, 47999887766&#10;11987654321"></textarea>
 
         <div class="actions">
             <button id="btn-formatar">Formatar e Verificar</button>
@@ -122,9 +122,8 @@
         <div class="input-group">
             <label for="output-format">2. Escolha o Formato de Saída:</label>
             <select id="output-format">
-                <option value="comma">+55 Bulk Sender (Separados por vírgula)</option>
-                <option value="newline_zdg">55 ZDG/Grup Zap (Um número por linha, sem nome)</option>
-                <option value="newline_zdg_csv">55 ZDG/Grup Zap (CSV: Nome,Número)</option>
+                <option value="newline_zdg_csv">55 ZDG/Grup Zap (CSV: Nome,Número) - **Recomendado**</option>
+                <option value="comma">+55 Bulk Sender (Números, separados por vírgula)</option>
             </select>
         </div>
 
@@ -182,12 +181,6 @@
                     // Para Bulk Sender, ignoramos o nome e fazemos uma string única com +55
                     return dataArray.map(item => `${prefix}${item.numero}`).join(separator);
 
-                } else if (format === 'newline_zdg') {
-                    prefix = '55'; // ZDG: Apenas 55, sem o +
-                    separator = '\n';
-                    // Para ZDG sem nome, listamos 55DDXXXXXXXXX por linha
-                    return dataArray.map(item => `${prefix}${item.numero}`).join(separator);
-                    
                 } else if (format === 'newline_zdg_csv') {
                     prefix = '55'; // ZDG CSV: Apenas 55, sem o +
                     separator = '\n';
@@ -215,6 +208,7 @@
                 
                 // Trata a entrada por quebra de linha (cada linha é uma tentativa de contato)
                 const linhas = textoBruto.split('\n');
+                let clienteCounter = 1; // Contador para gerar Cliente 1, Cliente 2, etc.
 
                 linhas.forEach(linhaOriginal => {
                     const linhaLimpa = linhaOriginal.trim();
@@ -222,34 +216,49 @@
 
                     let nome = '';
                     let numeroBruto = '';
+                    let isCsvFormat = false;
 
-                    // Tenta detectar o padrão CSV (Nome,Número)
+                    // 1. Tenta detectar o padrão CSV (Nome,Número)
                     const partes = linhaLimpa.split(',');
                     if (partes.length >= 2) {
                         // Assume que a primeira parte é o nome e a última é o número
-                        nome = partes.slice(0, -1).join(',').trim(); // Se o nome tiver vírgula
                         numeroBruto = partes[partes.length - 1].trim();
-                    } else {
-                        // Se não for CSV, assume que a linha inteira é o número
+                        // Se o 'número' for composto só de dígitos (ou quase), consideramos CSV.
+                        if (numeroBruto.replace(/\D/g, '').length >= 8) {
+                            nome = partes.slice(0, -1).join(',').trim(); // Se o nome tiver vírgula
+                            isCsvFormat = true;
+                        }
+                    } 
+                    
+                    // 2. Se não for CSV detectado, assume que a linha inteira é o número
+                    if (!isCsvFormat) {
                         numeroBruto = linhaLimpa;
-                        nome = `cliente${(resultadosProcessados.length + numerosInvalidos.length) + 1}`; // Gera nome padrão
+                        // O nome REAL será atribuído após a validação do número.
                     }
 
                     // Limpeza e Normalização do Número
                     let numeroProcessado = numeroBruto.replace(/\D/g, ''); // Remove todos os não-dígitos
 
-                    // 1. Remove DDI '55' ou '+55' inicial se já estiver presente
+                    // 3. Remove DDI '55' ou '+55' inicial se já estiver presente
                     if (numeroProcessado.startsWith('55') && numeroProcessado.length >= 12) {
                         numeroProcessado = numeroProcessado.substring(2);
                     }
                     
-                    // 2. Adiciona o '9' para celulares de 10 dígitos (DDD + 8 dígitos) - REGRA BR
+                    // 4. Adiciona o '9' para celulares de 10 dígitos (DDD + 8 dígitos) - REGRA BR
                     if (numeroProcessado.length === 10 && '6789'.includes(numeroProcessado[2])) {
                         numeroProcessado = `${numeroProcessado.slice(0, 2)}9${numeroProcessado.slice(2)}`;
                     }
 
-                    // 3. Validação Final: Deve ter 11 dígitos (DDD + 9 dígitos)
+                    // 5. Validação Final: Deve ter 11 dígitos (DDD + 9 dígitos)
                     if (numeroProcessado.length === 11) {
+                        
+                        // Garante que o nome seja 'Cliente X' se não foi fornecido um nome válido na entrada
+                        if (!isCsvFormat || nome === '') {
+                             // Se não for CSV, ou se o nome estiver vazio, geramos o nome genérico
+                             nome = `Cliente ${clienteCounter}`;
+                             clienteCounter++;
+                        }
+                        
                         // Armazena no formato base { numero: DDXXXXXXXXX, nome: Nome }
                         resultadosProcessados.push({ numero: numeroProcessado, nome: nome });
                     } else {
@@ -258,10 +267,11 @@
                     }
                 });
 
-                // Remove duplicatas (Baseado APENAS no número, mas mantém o nome)
+                // Remove duplicatas (Baseado APENAS no número)
                 const mapUnico = new Map();
                 resultadosProcessados.forEach(item => {
-                    // Usa o número como chave para garantir unicidade, armazena o objeto completo
+                    // Se o número ainda não foi visto, ou se o nome atual é 'Cliente X' e o novo nome não é,
+                    // priorizamos o nome não-genérico (mas para esta função, podemos simplesmente aceitar o primeiro)
                     if (!mapUnico.has(item.numero)) {
                         mapUnico.set(item.numero, item);
                     }
@@ -321,7 +331,9 @@
                 let loteIndex = 1;
                 let totalLotes = Math.ceil(validosArrayData.length / loteSize);
                 const outputFormat = outputFormatSelect.value;
-                const fileExtension = (outputFormat === 'newline_zdg' || outputFormat === 'comma') ? '.txt' : '.csv';
+                
+                // CSV para ZDG, TXT/CSV para Bulk Sender
+                const fileExtension = outputFormat === 'newline_zdg_csv' ? '.csv' : '.txt'; 
 
                 for (let i = 0; i < validosArrayData.length; i += loteSize) {
                     const lote = validosArrayData.slice(i, i + loteSize);
