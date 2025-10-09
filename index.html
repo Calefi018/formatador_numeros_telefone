@@ -46,7 +46,7 @@
             resize: vertical;
             box-sizing: border-box;
         }
-        input[type="number"] {
+        input[type="number"], select {
             width: 100%;
             padding: 12px;
             border: 1px solid #dddfe2;
@@ -55,7 +55,7 @@
             margin-bottom: 15px;
             box-sizing: border-box;
             text-align: center;
-            -moz-appearance: textfield; /* Para Firefox */
+            -moz-appearance: textfield;
         }
         input[type="number"]::-webkit-outer-spin-button,
         input[type="number"]::-webkit-inner-spin-button {
@@ -63,7 +63,7 @@
             margin: 0;
         }
         textarea#output-erros {
-            border-color: #dc3545; /* Vermelho para destacar erros */
+            border-color: #dc3545;
             background-color: #fff6f6;
         }
         .actions {
@@ -81,7 +81,7 @@
             font-weight: bold;
             cursor: pointer;
             transition: background-color 0.2s;
-            flex-grow: 1; /* Para que os botões se expandam */
+            flex-grow: 1;
         }
         button:hover {
             background-color: #166fe5;
@@ -110,7 +110,7 @@
     <div class="container">
         <h1>Formatador e Verificador de Números</h1>
         
-        <label for="input-numeros">1. Cole todos os números aqui (um por linha):</label>
+        <label for="input-numeros">1. Cole todos os números aqui (qualquer formato, um por linha ou separados):</label>
         <textarea id="input-numeros" placeholder="Ex: (47) 99123-4567&#10;123456 (número errado)&#10;47999887766"></textarea>
 
         <div class="actions">
@@ -119,18 +119,26 @@
 
         <br>
 
-        <label for="output-validos">2. Resultado Válido (total formatado):</label>
+        <div class="input-group">
+            <label for="output-format">2. Escolha o Formato de Saída:</label>
+            <select id="output-format">
+                <option value="comma">Bulk Sender (Separados por vírgula)</option>
+                <option value="newline">ZDG/Grup Zap (Um número por linha)</option>
+            </select>
+        </div>
+
+        <label for="output-validos">3. Resultado Válido (total formatado - com a formatação escolhida):</label>
         <textarea id="output-validos" readonly placeholder="Números formatados corretamente aparecerão aqui..."></textarea>
         
         <div class="actions">
-            <button id="btn-copiar" class="copy">Copiar Todos Válidos</button>
+            <button id="btn-copiar" class="copy">Copiar Válidos</button>
         </div>
         <div id="copy-feedback"></div>
 
         <br>
 
         <div class="input-group">
-            <label for="input-lote-size">3. Tamanho do Lote (números por arquivo):</label>
+            <label for="input-lote-size">4. Tamanho do Lote (números por arquivo):</label>
             <input type="number" id="input-lote-size" value="500" min="10" placeholder="Ex: 300, 500, 1000">
         </div>
         
@@ -140,7 +148,7 @@
 
         <br>
 
-        <label for="output-erros">4. Números com Erro (para correção manual):</label>
+        <label for="output-erros">5. Números com Erro (para correção manual):</label>
         <textarea id="output-erros" readonly placeholder="Números não identificados aparecerão aqui..."></textarea>
 
     </div>
@@ -157,12 +165,20 @@
             const feedbackEl = document.getElementById('copy-feedback');
             const loteSizeInput = document.getElementById('input-lote-size');
             const downloadLotesBtn = document.getElementById('btn-download-lotes');
+            const outputFormatSelect = document.getElementById('output-format');
 
-            // Variável global para armazenar os números válidos como array
+            // Variável global para armazenar os números válidos como array no formato +55XXXXXXXXXXX
             let validosArray = [];
 
-            formatarBtn.addEventListener('click', () => {
+            // Função que aplica a formatação de saída (comma ou newline)
+            const getFormattedOutput = (dataArray, format) => {
+                const separator = format === 'comma' ? ',' : '\n';
+                return dataArray.join(separator);
+            };
+
+            const formatarEExibir = () => {
                 const textoBruto = inputEl.value;
+                const outputFormat = outputFormatSelect.value;
                 feedbackEl.textContent = '';
                 downloadLotesBtn.disabled = true;
 
@@ -176,31 +192,46 @@
                 const numerosValidos = [];
                 const numerosInvalidos = [];
                 
-                // Divide a entrada por NOVA LINHA
-                const potenciaisNumeros = textoBruto.split('\n');
+                // Trata a entrada, aceitando números separados por quebra de linha, vírgula, ou espaço.
+                const potenciaisNumeros = textoBruto.split(/[\n, ]+/);
 
                 potenciaisNumeros.forEach(itemOriginal => {
                     const itemLimpo = itemOriginal.trim();
                     if (!itemLimpo) return; 
 
-                    let numeroProcessado = itemLimpo.replace(/\D/g, '');
+                    let numeroProcessado = itemLimpo.replace(/\D/g, ''); // Remove todos os não-dígitos
 
-                    // Lógica para adicionar o '9' em números de 10 dígitos (XX 9XXXX-XXXX)
+                    // 1. Remove DDI '55' ou '55' inicial se já estiver presente
+                    if (numeroProcessado.startsWith('55') && numeroProcessado.length >= 12) {
+                        numeroProcessado = numeroProcessado.substring(2);
+                    }
+                    
+                    // 2. Remove '+55' inicial se ainda existir (embora o replace(/\D/g) já devesse ter tirado o '+')
+                    if (numeroProcessado.startsWith('55') && numeroProcessado.length >= 12) {
+                        numeroProcessado = numeroProcessado.substring(2);
+                    }
+                    
+                    // 3. Adiciona o '9' para celulares de 10 dígitos (DDD + 8 dígitos) - **REGRA DE TELEFONIA BRASILEIRA**
+                    // Válido para DDDs brasileiros onde o número começa com 6, 7, 8 ou 9.
                     if (numeroProcessado.length === 10 && '6789'.includes(numeroProcessado[2])) {
                         numeroProcessado = `${numeroProcessado.slice(0, 2)}9${numeroProcessado.slice(2)}`;
                     }
 
-                    // Verifica se o número final tem 11 dígitos (DDD + 9 dígitos)
+                    // 4. Validação Final: Deve ter 11 dígitos (DDD + 9 dígitos)
                     if (numeroProcessado.length === 11) {
+                        // Formata para o padrão interno: +55DDXXXXXXXXX
                         numerosValidos.push(`+55${numeroProcessado}`);
                     } else {
+                        // Se não for validado, volta o item original sem o trim, mas limpo
                         numerosInvalidos.push(itemLimpo);
                     }
                 });
 
-                // Remove duplicatas e ordena para a saída principal
+                // Remove duplicatas e ordena
                 validosArray = [...new Set(numerosValidos)].sort(); 
-                const resultadoValido = validosArray.join(',');
+                
+                // Aplica a formatação de saída (Vírgula ou Nova Linha)
+                const resultadoValido = getFormattedOutput(validosArray, outputFormat);
                 const resultadoInvalido = numerosInvalidos.join('\n');
 
                 outputValidosEl.value = resultadoValido;
@@ -213,7 +244,11 @@
                 } else {
                     downloadLotesBtn.textContent = 'Baixar Lotes (.zip)';
                 }
-            });
+            };
+
+            // Event Listeners
+            formatarBtn.addEventListener('click', formatarEExibir);
+            outputFormatSelect.addEventListener('change', formatarEExibir); // Atualiza a saída se o formato mudar
 
             copiarBtn.addEventListener('click', () => {
                 if (!outputValidosEl.value) return;
@@ -223,7 +258,7 @@
                     copiarBtn.textContent = 'Copiado!';
                     setTimeout(() => {
                         feedbackEl.textContent = '';
-                        copiarBtn.textContent = 'Copiar Todos Válidos';
+                        copiarBtn.textContent = 'Copiar Válidos';
                     }, 2000);
                 }).catch(err => {
                     feedbackEl.textContent = 'Erro ao copiar.';
@@ -247,17 +282,19 @@
                 const zip = new JSZip();
                 let loteIndex = 1;
                 let totalLotes = Math.ceil(validosArray.length / loteSize);
+                const outputFormat = outputFormatSelect.value;
+                const fileExtension = outputFormat === 'newline' ? '.txt' : '.csv';
 
                 // Itera sobre o array de números válidos, dividindo em fatias
                 for (let i = 0; i < validosArray.length; i += loteSize) {
                     // Seleciona a fatia (o lote)
                     const lote = validosArray.slice(i, i + loteSize);
                     
-                    // Une os números do lote com vírgulas
-                    const conteudoLote = lote.join(',');
+                    // Aplica a formatação de saída (Vírgula ou Nova Linha)
+                    const conteudoLote = getFormattedOutput(lote, outputFormat);
 
                     // Cria o nome do arquivo, ex: lote_01_de_10.txt
-                    const nomeArquivo = `lote_${String(loteIndex).padStart(2, '0')}_de_${String(totalLotes).padStart(2, '0')}_${lote.length}_numeros.txt`;
+                    const nomeArquivo = `lote_${String(loteIndex).padStart(2, '0')}_de_${String(totalLotes).padStart(2, '0')}_${lote.length}_numeros${fileExtension}`;
                     
                     // Adiciona o arquivo ao zip
                     zip.file(nomeArquivo, conteudoLote);
@@ -268,7 +305,6 @@
                 // Gera o arquivo zip e inicia o download
                 zip.generateAsync({ type: "blob" })
                 .then(function(content) {
-                    // Função para salvar o arquivo (simulando um link de download)
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(content);
                     a.download = 'numeros_em_lotes.zip';
